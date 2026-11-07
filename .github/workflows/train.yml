@@ -1,4 +1,4 @@
-# Lab 3, Part 5: train the candidates and run the promotion gate on every pull request and every push to main.
+﻿# Lab 3, Part 5: train the candidates and run the promotion gate on every pull request and every push to main.
 # Red run = the gate blocked a model that is not good enough. That red run is what you show in your video.
 # Pins are the same full commit SHAs as in ci.yml. Update them on purpose, never by accident.
 name: train-and-gate
@@ -48,7 +48,8 @@ jobs:
           echo "BATCH=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
           BATCH="${GITHUB_SHA::7}" python -m src.train.train_mlflow
 
-      - name: Promotion gate (exit code 1 = blocked)
+      - if: github.event_name != 'push'
+        name: Promotion gate (exit code 1 = blocked)
         run: python scripts/promote.py --champion-file "$RUNNER_TEMP/champion.json"
 
       - name: Summary
@@ -62,3 +63,16 @@ jobs:
 
       # TODO (your work): after the gate passes on main, build the image (the Dockerfile packages artifacts/model.joblib),
       # smoke-test it with scripts/smoke_test.sh, and deploy it. See Part 6 of the lab page for both options.
+
+
+      - name: Build the image (main only, the champion is already committed)
+        if: github.event_name == 'push'
+        run: |
+          docker build --build-arg GIT_SHA="$GITHUB_SHA" -t churn-api:${GITHUB_SHA::7} .
+          echo "IMAGE=churn-api:${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Smoke test the image
+        if: github.event_name == 'push'
+        run: |
+          docker run -d --name api -p 8000:8000 "$IMAGE"
+          bash scripts/smoke_test.sh http://localhost:8000
